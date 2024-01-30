@@ -48,7 +48,7 @@ async function driveCleanUp(createdTime,driveService,filesInFolder){
             console.log(`Deleting photo: ${photoName}`);
             await driveService
                 .files
-            //.delete({fileId});
+                .delete({fileId});
             console.log(`Finished deleting photo: ${photoName}`);
 
         }
@@ -89,7 +89,7 @@ async function main(){
             q: `'${surplusProcurementFolderID}' in parents and mimeType = 'application/vnd.google-apps.folder'`
         });
 
-
+    console.log(res)
     const folders = res.data.files;
     console.log(folders);
     console.log("Got all folders in the Surplus Warehouse Folder ( Google Drive ) complete");
@@ -100,7 +100,7 @@ async function main(){
         res = await driveService
             .files
             .list({
-                //pageSize: 2,
+
                 fields: 'nextPageToken, files(id, name, kind)',
                 q: `'${folderId}' in parents and mimeType = 'image/jpeg'`
             });
