@@ -8,7 +8,7 @@ const {sep} = path;
 const surplusProcurementFolderID = "1-BnROAnMCiylGBlBfiuonvSi3rxl4zk7"
 const externalDrive = `${sep}${process.env.EXTERNAL_DIRECTORY}${sep}surplus_storage${sep}warehouse${sep}`;
 
-const oneHunderedAndEightyDays = 15552000000;
+const oneHundredAndEightyDays = 15552000000;
 const oneYear = 31536000000;
 
 function surplusStorageCleanUp(){
@@ -95,7 +95,7 @@ async function setupExternalDriveFolder(folderName) {
 
 async function driveCleanUp(createdTime, driveService, filesInFolder) {
     console.log(`Folder is ${Math.floor((Date.now() - new Date(createdTime).getTime()) / 86400000)} days old`);
-    if (Date.now() - new Date(createdTime).getTime() > oneHunderedAndEightyDays) {
+    if (Date.now() - new Date(createdTime).getTime() > oneHundredAndEightyDays) {
         console.log("Deleting folder from Google Drive");
         for (let {id: fileId, name: photoName} of filesInFolder) {
             console.log(`Deleting photo: ${photoName}`);
