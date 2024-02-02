@@ -2,16 +2,17 @@ const {google} = require('googleapis');
 const path = require('path');
 const fs = require('fs');
 const Jimp = require('jimp');
+require('dotenv').config()
 
 const {sep} = path;
 const surplusProcurementFolderID = "1-BnROAnMCiylGBlBfiuonvSi3rxl4zk7"
-const externalDrive = `${sep}${sep}10.100.100.10${sep}Surplus_Storage${sep}warehouse${sep}`;
+const externalDrive = `${sep}${process.env.EXTERNAL_DIRECTORY}${sep}surplus_storage${sep}warehouse${sep}`;
 
 const oneHunderedAndEightyDays = 15552000000;
 const oneYear = 31536000000;
 
 function surplusStorageCleanUp(){
-    console.log("Cleaning up photos ( Local )")
+    console.log("Cleaning up photos ( Surplus Storage )")
     let photosDirectory = path.join(externalDrive);
     let files = fs.readdirSync(photosDirectory);
     let oneYearAgo = Date.now() - oneYear;
@@ -25,7 +26,7 @@ function surplusStorageCleanUp(){
             console.log(`Finished deleting file: ${file}`);
         }
     }
-    console.log("Finished cleaning up photos ( Local )")
+    console.log("Finished cleaning up photos ( Surplus Storage )")
 }
 
 const getDriveService = () => {
@@ -70,7 +71,7 @@ async function processPhotos(externalDriveFolder) {
     console.log("==================================")
 
     console.log("Cleaning up photos ( Local )")
-    await localCleanUp(files, photosDirectory);
+    await tempFilesCleanUp(files, photosDirectory);
 }
 
 async function compressPhoto(filePath, outPath = undefined) {
@@ -108,14 +109,15 @@ async function driveCleanUp(createdTime, driveService, filesInFolder) {
     } else {
         console.log("Folder is not old enough to delete");
         console.log("It is safe, for now.....");
+        console.log("==================================")
     }
 }
 
-async function localCleanUp(files, photosDirectory) {
-    console.log("Starting : LocalCleanUp");
+async function tempFilesCleanUp(files, photosDirectory) {
+    console.log("Starting : tempFilesCleanUp");
     console.log("==================================")
-    console.log("Cleaning up photos ( Local ) progress")
-    progressBar(0, `Cleaning up photos ( Local ) progress`)
+    console.log("Cleaning up photos ( temp ) progress")
+    progressBar(0, `Cleaning up photos ( temp ) progress`)
     for (let i = 0; i < files.length; i++) {
         let file = files[i];
         progressBar(
@@ -131,7 +133,7 @@ async function localCleanUp(files, photosDirectory) {
     }
     progressBar(
         100,
-        `Finished cleaning up photos ( Local )`
+        `Finished cleaning up photos ( temp )`
     )
     console.log("==================================")
 }
@@ -194,7 +196,6 @@ async function downloadAndProcessAllPhotosFromFolder(folders, externalDriveDirec
                 q: `'${folderId}' in parents and mimeType = 'image/jpeg'`
             }
         }
-        console.log(reqBody)
         let res = await driveService
             .files
             .list(reqBody);
