@@ -5,13 +5,15 @@ const Jimp = require('jimp');
 require('dotenv').config()
 
 const {sep} = path;
-const surplusProcurementFolderID = "1-BnROAnMCiylGBlBfiuonvSi3rxl4zk7"
+const surplusProcurementFolderID = "1TeXMYU9jzWZyna7zB8jngeirvhJosvdO"
 const externalDrive = `${sep}${process.env.EXTERNAL_DIRECTORY}${sep}surplus_storage${sep}warehouse${sep}`;
+
+console.log("External Drive: " + externalDrive);
 
 const oneHundredAndEightyDays = 15552000000;
 const oneYear = 31536000000;
 
-function surplusStorageCleanUp(){
+function surplusStorageCleanUp() {
     console.log("Cleaning up photos ( Surplus Storage )")
     let photosDirectory = path.join(externalDrive);
     let files = fs.readdirSync(photosDirectory);
@@ -20,7 +22,7 @@ function surplusStorageCleanUp(){
         let file = files[i];
         let filePath = path.join(photosDirectory, file);
         let fileStats = fs.statSync(filePath);
-        if(fileStats.birthtimeMs < oneYearAgo){
+        if (fileStats.birthtimeMs < oneYearAgo) {
             console.log(`Deleting file: ${file}`);
             fs.unlinkSync(filePath);
             console.log(`Finished deleting file: ${file}`);
@@ -38,9 +40,9 @@ const getDriveService = () => {
     return driveService;
 }
 
-function progressBar(percent, text = ""){
-    const dots = "*".repeat(percent/5)
-    const left = 20 - percent/5
+function progressBar(percent, text = "") {
+    const dots = "*".repeat(percent / 5)
+    const left = 20 - percent / 5
     const empty = " ".repeat(left)
     process.stdout.write(`\r[${dots}${empty}] ${percent}%     ${text}`);
 }
@@ -92,7 +94,6 @@ async function setupExternalDriveFolder(folderName) {
     return externalDriveFolder + sep;
 }
 
-
 async function driveCleanUp(createdTime, driveService, filesInFolder) {
     console.log(`Folder is ${Math.floor((Date.now() - new Date(createdTime).getTime()) / 86400000)} days old`);
     if (Date.now() - new Date(createdTime).getTime() > oneHundredAndEightyDays) {
@@ -138,7 +139,7 @@ async function tempFilesCleanUp(files, photosDirectory) {
     console.log("==================================")
 }
 
-async function downloadPhotos(filesInFolder, folderName, driveService,body={}) {
+async function downloadPhotos(filesInFolder, folderName, driveService, body = {}) {
     console.log("Starting : DownloadPhotos");
     console.log("==================================")
     console.log(`Downloading all files in folder: ${folderName}`)
@@ -152,10 +153,12 @@ async function downloadPhotos(filesInFolder, folderName, driveService,body={}) {
             )
             driveService
                 .files
-                .get({...body,...{
-                    fileId: fileId,
-                    alt: 'media'
-                }}, {responseType: 'stream'})
+                .get({
+                    ...body, ...{
+                        fileId: fileId,
+                        alt: 'media'
+                    }
+                }, {responseType: 'stream'})
                 .then(res => {
                     const dest = path.join(__dirname, '/photos', `${folderName}-${fileName}`);
                     const writeStream = fs.createWriteStream(dest);
@@ -181,48 +184,67 @@ async function downloadPhotos(filesInFolder, folderName, driveService,body={}) {
     )
 }
 
-async function downloadAndProcessAllPhotosFromFolder(folders, externalDriveDirectory, driveService, body = {}) {
+async function downloadAndProcessAllPhotosFromFolder(folder, externalDriveDirectory, driveService, body = {}) {
     console.log("Starting : DownloadAndProcessAllPhotosFromFolder");
     console.log("==================================")
-    for (let i = 0; i < folders.length; i++) {
-        const {id: folderId, name: folderName, createdTime} = folders[i];
-        console.log(`Getting all files in folder: ${folderName}`);
-        let reqBody = {
-            ...body,
-            ...{
-                pageSize: 1000,
-                pageToken: body.pageToken,
-                fields: 'nextPageToken, files(id, name, kind)',
-                q: `'${folderId}' in parents and mimeType = 'image/jpeg'`
-            }
+    const {id: folderId, name: folderName, createdTime} = folder;
+    console.log(`Getting all files in folder: ${folderName}`);
+    let folderBody = {
+        pageSize: 1000,
+        fields: 'nextPageToken, files(id, name, kind)',
+        q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder'`
+    }
+    let res = await driveService
+        .files
+        .list(folderBody);
+    const foldersInFolders = res.data.files;
+
+    const photoFolders = foldersInFolders.find(folder => folder.name.includes("Photos"));
+    if(!photoFolders) {
+        console.log("No photos folder found in folder: " + folderName);
+        return;
+    }
+    const {name: photoFolderName, id: photoFolderId} = photoFolders;
+    console.log("Getting all files in folder: " + photoFolders.name);
+    const photosBody = {
+        ...body,
+        ...{
+            pageSize: 1000,
+            pageToken: body.pageToken,
+            fields: 'nextPageToken, files(id, name, kind)',
+            q: `'${photoFolderId}' in parents and mimeType = 'image/jpeg'`
         }
-        let res = await driveService
-            .files
-            .list(reqBody);
+    }
+    let photosRes = await driveService
+        .files
+        .list(photosBody);
+    const filesInFolder = photosRes.data.files;
 
-        const filesInFolder = res.data.files;
-        console.log("Files Where Retrieved starting download");
-        if (!externalDriveDirectory.includes(folderName)) {
-            await downloadPhotos(filesInFolder, folderName, driveService);
-            console.log("Setting up folder in surplus storage drive : " + folderName)
-            let externalDriveFolder = await setupExternalDriveFolder(folderName);
-            console.log("Folder was setup in surplus storage drive : " + folderName);
+    if(!filesInFolder.length || filesInFolder.length === 0) {
+        console.log("No photos found in folder: " + photoFolderName);
+        return;
+    }
+    console.log("Files Where Retrieved starting download");
+
+    if (!externalDriveDirectory.includes(photoFolderName)) {
+        await downloadPhotos(filesInFolder, photoFolderName, driveService);
+        console.log("Setting up folder in surplus storage drive : " + photoFolderName)
+        let externalDriveFolder = await setupExternalDriveFolder(photoFolderName);
+        console.log("Folder was setup in surplus storage drive : " + photoFolderName);
+        console.log("==================================")
+        console.log("Starting : ProcessPhotos");
+        await processPhotos(externalDriveFolder);
+        if (photosRes.data.nextPageToken) {
+            console.log("Continuing to download files in folder: " + photoFolderName);
+            console.log("pageToken: " + photosRes.data.nextPageToken);
+            console.log(photosRes.data)
+            await downloadAndProcessAllPhotosFromFolder(folder, externalDriveDirectory, driveService, {pageToken: photosRes.data.nextPageToken});
+        }else{
+            console.log("Finished downloading all files in folder: " + photoFolderName);
             console.log("==================================")
-            console.log("Starting : ProcessPhotos");
-            await processPhotos(externalDriveFolder);
-            if (res.data.nextPageToken) {
-                console.log("Continuing to download files in folder: " + folderName);
-                console.log("pageToken: " + res.data.nextPageToken);
-                console.log(res.data)
-                await downloadAndProcessAllPhotosFromFolder(folders, externalDriveDirectory, driveService, {pageToken: res.data.nextPageToken});
-            }
-
-        } else {
-            console.log(`Folder: ${folderName} already exists on external drive`)
         }
 
         await driveCleanUp(createdTime, driveService, filesInFolder);
-
     }
 }
 
@@ -259,7 +281,10 @@ async function main(body = {}) {
 
     console.log("Got all folders in the Surplus Warehouse Folder ( Google Drive ) complete");
     console.log("==================================")
-    await downloadAndProcessAllPhotosFromFolder(folders, externalDriveDirectory, driveService)
+
+    for (let i = 0 ; i < folders.length; i++) {
+        await downloadAndProcessAllPhotosFromFolder(folders[i], externalDriveDirectory, driveService)
+    }
 
     console.log("Cleaning up photos ( Surplus Storage )")
     surplusStorageCleanUp();
