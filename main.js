@@ -204,8 +204,7 @@ async function downloadAndProcessAllPhotosFromFolder(folder, externalDriveDirect
         console.log("No photos folder found in folder: " + folderName);
         return;
     }
-    const {name: photoFolderName, id: photoFolderId} = photoFolders;
-    console.log("Getting all files in folder: " + photoFolders.name);
+    const { id: photoFolderId } = photoFolders;
     const photosBody = {
         ...body,
         ...{
@@ -221,26 +220,26 @@ async function downloadAndProcessAllPhotosFromFolder(folder, externalDriveDirect
     const filesInFolder = photosRes.data.files;
 
     if(!filesInFolder.length || filesInFolder.length === 0) {
-        console.log("No photos found in folder: " + photoFolderName);
+        console.log("No photos found in folder: " + folderName);
         return;
     }
     console.log("Files Where Retrieved starting download");
 
-    if (!externalDriveDirectory.includes(photoFolderName)) {
-        await downloadPhotos(filesInFolder, photoFolderName, driveService);
-        console.log("Setting up folder in surplus storage drive : " + photoFolderName)
-        let externalDriveFolder = await setupExternalDriveFolder(photoFolderName);
-        console.log("Folder was setup in surplus storage drive : " + photoFolderName);
+    if (!externalDriveDirectory.includes(folderName)) {
+        await downloadPhotos(filesInFolder, folderName, driveService);
+        console.log("Setting up folder in surplus storage drive : " + folderName)
+        let externalDriveFolder = await setupExternalDriveFolder(folderName);
+        console.log("Folder was setup in surplus storage drive : " + folderName);
         console.log("==================================")
         console.log("Starting : ProcessPhotos");
         await processPhotos(externalDriveFolder);
         if (photosRes.data.nextPageToken) {
-            console.log("Continuing to download files in folder: " + photoFolderName);
+            console.log("Continuing to download files in folder: " + folderName);
             console.log("pageToken: " + photosRes.data.nextPageToken);
             console.log(photosRes.data)
             await downloadAndProcessAllPhotosFromFolder(folder, externalDriveDirectory, driveService, {pageToken: photosRes.data.nextPageToken});
         }else{
-            console.log("Finished downloading all files in folder: " + photoFolderName);
+            console.log("Finished downloading all files in folder: " + folderName);
             console.log("==================================")
         }
 
