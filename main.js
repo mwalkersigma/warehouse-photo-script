@@ -1,7 +1,9 @@
 const {google} = require('googleapis');
 const path = require('path');
 const fs = require('fs');
+const fsp = require('fs/promises')
 const Jimp = require('jimp');
+const convert = require('heic-convert');
 require('dotenv').config()
 
 const {sep} = path;
@@ -12,6 +14,10 @@ console.log("External Drive: " + externalDrive);
 
 const oneHundredAndEightyDays = 15552000000;
 const oneYear = 31536000000;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function surplusStorageCleanUp() {
     console.log("Cleaning up photos ( Surplus Storage )")
@@ -36,8 +42,7 @@ const getDriveService = () => {
         keyFile: path.join(__dirname, 'cert.json'),
         scopes: ['https://www.googleapis.com/auth/drive'],
     });
-    const driveService = google.drive({version: 'v3', auth});
-    return driveService;
+    return google.drive({version: 'v3', auth});
 }
 
 function progressBar(percent, text = "") {
@@ -56,15 +61,29 @@ async function processPhotos(externalDriveFolder) {
     for (let i = 0; i < files.length; i++) {
         let file = files[i];
         let filePath = path.join(photosDirectory, file);
-        progressBar(
-            Math.floor((i / files.length) * 100),
-            `Compressing photo: ${file} and sending to ${externalDriveFolder}`
-        );
+        let progress = Math.floor((i / files.length) * 100);
+        progressBar(progress, `Compressing photo: ${file}`);
+        if(!filePath.includes(".jpg") && !filePath.includes(".jpeg")) {
+            if(filePath.includes(".heic")) {
+                progressBar(progress, `Converting photo: ${file} to jpg`);
+                let heicBuffer = await fsp.readFile(filePath);
+                let jpgBuffer = await convert({
+                    buffer: heicBuffer,
+                    format: 'JPEG'
+                });
+                fs.unlinkSync(filePath);
+                filePath = filePath.replace(".heic", ".jpg");
+                await fsp.writeFile(filePath, jpgBuffer);
+                await compressPhoto(filePath, path.join(externalDriveFolder, file.replace(".heic", ".jpg")) );
+                progressBar(progress, `Finished compressing photo: ${file}`)
+                continue;
+            } else {
+                console.log(`File: ${file} is not a photo or unexpected file type. Skipping...`);
+                continue;
+            }
+        }
         await compressPhoto(filePath, path.join(externalDriveFolder, file));
-        progressBar(
-            Math.floor((i / files.length) * 100),
-            `Finished compressing photo: ${file} and sending to ${externalDriveFolder}`
-        )
+        progressBar(progress, `Finished compressing photo: ${file}`)
     }
     progressBar(
         100,
@@ -73,6 +92,7 @@ async function processPhotos(externalDriveFolder) {
     console.log("==================================")
 
     console.log("Cleaning up photos ( Local )")
+    files = fs.readdirSync(photosDirectory);
     await tempFilesCleanUp(files, photosDirectory);
 }
 
@@ -191,7 +211,7 @@ async function downloadAndProcessAllPhotosFromFolder(folder, externalDriveDirect
     console.log(`Getting all files in folder: ${folderName}`);
     let folderBody = {
         pageSize: 1000,
-        fields: 'nextPageToken, files(id, name, kind)',
+        fields: 'nextPageToken, files(id, name, kind, modifiedTime, createdTime)',
         q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder'`
     }
     let res = await driveService
@@ -204,19 +224,28 @@ async function downloadAndProcessAllPhotosFromFolder(folder, externalDriveDirect
         console.log("No photos folder found in folder: " + folderName);
         return;
     }
-    const { id: photoFolderId } = photoFolders;
+    const { id: photoFolderId, modifiedTime } = photoFolders;
+
+    if (Date.now() - new Date(modifiedTime).getTime() < 259200000) {
+        console.log("Folder is too new to download photos");
+        console.log("==================================")
+        return;
+    }
+
     const photosBody = {
         ...body,
         ...{
             pageSize: 1000,
             pageToken: body.pageToken,
             fields: 'nextPageToken, files(id, name, kind)',
-            q: `'${photoFolderId}' in parents and mimeType = 'image/jpeg'`
+            q: `'${photoFolderId}' in parents and mimeType != 'application/vnd.google-apps.folder'`
         }
     }
+
     let photosRes = await driveService
         .files
         .list(photosBody);
+
     const filesInFolder = photosRes.data.files;
 
     if(!filesInFolder.length || filesInFolder.length === 0) {
@@ -264,8 +293,8 @@ async function main(body = {}) {
     let driveService = getDriveService();
     let externalDriveDirectory = fs.readdirSync(path.join(externalDrive));
 
-
     console.log("Getting All Folders in Surplus Warehouse Folder ( Google Drive )");
+
     let res = await driveService
         .files
         .list({
@@ -280,8 +309,15 @@ async function main(body = {}) {
 
     console.log("Got all folders in the Surplus Warehouse Folder ( Google Drive ) complete");
     console.log("==================================")
-
+    console.log(externalDriveDirectory)
     for (let i = 0 ; i < folders.length; i++) {
+        let folder = folders[i];
+        // Check to see if the folder is in the external drive
+        if (externalDriveDirectory.map(f => f.trim()).includes(folder.name.trim())) {
+            console.log("Folder: " + folder.name + " is already in the external drive");
+            console.log("==================================")
+            continue;
+        }
         await downloadAndProcessAllPhotosFromFolder(folders[i], externalDriveDirectory, driveService)
     }
 
